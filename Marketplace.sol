@@ -1,128 +1,127 @@
 pragma solidity ^0.8.0;
 
 contract DecentralizedMarketplace {
-    address payable private ownerAddress;
+    address payable private contractOwner;
 
     struct Item {
-        uint id;
-        address payable sellerAddress;
-        address buyerAddress;
-        uint priceInWei;
-        bool isCurrentlyListed;
+        uint itemId;
+        address payable seller;
+        address buyer;
+        uint priceWei;
+        bool listedForSale;
     }
 
-    uint public itemCount = 0;
-    mapping(uint => Item) public itemsForSale;
+    uint public totalItems = 0;
+    mapping(uint => Item) public itemsListed;
 
-    event ItemListedEvent(uint itemId, address indexed sellerAddress, uint priceInWei);
-    event MultipleItemsListedEvent(uint[] itemIds);
-    event ItemPurchasedEvent(uint itemId, address indexed buyerAddress, uint priceInWei);
-    event MultipleItemsPurchasedEvent(uint[] itemIds);
-    event ItemDelistedEvent(uint itemId);
-    event ItemPriceUpdatedEvent(uint itemId, uint newPriceInWei);
+    event ItemListed(uint itemId, address indexed seller, uint priceWei);
+    event ItemsListedBulk(uint[] itemIds);
+    event ItemSold(uint itemId, address indexed buyer, uint priceWei);
+    event ItemsSoldBulk(uint[] itemIds);
+    event ItemRemoved(uint itemId);
+    event ItemPriceChanged(uint itemId, uint newPriceWei);
 
-    modifier onlyOwner() {
-        require(msg.sender == ownerAddress, "DecentralizedMarketplace: Caller is not the owner");
+    modifier isOwner() {
+        require(msg.sender == contractOwner, "Only the contract owner can perform this operation");
         _;
     }
 
-    modifier onlySellerOfItem(uint itemId) {
-        require(msg.sender == itemsForSale[itemId].sellerAddress, "DecentralizedMarketplace: Caller is not the seller of this item");
+    modifier isSeller(uint itemId) {
+        require(msg.sender == itemsListed[itemId].seller, "Only the item seller can perform this operation");
         _;
     }
 
     constructor() {
-        ownerAddress = payable(msg.sender);
+        contractOwner = payable(msg.sender);
     }
 
-    function listItemForSale(uint priceInWei) external returns (uint) {
-        addItemToList(priceInWei);
+    function offerItem(uint priceWei) external returns (uint) {
+        return listItem(priceWei);
     }
 
-    function listMultipleItemsForSale(uint[] calldata pricesInWei) external returns (uint[] memory) {
-        return addMultipleItemsToList(pricesInWei);
+    function offerMultipleItems(uint[] calldata pricesWei) external returns (uint[] memory) {
+        return listItemsBulk(pricesWei);
     }
 
-    function purchaseItem(uint itemId) external payable {
-        processSingleItemPurchase(itemId);
+    function buyItem(uint itemId) external payable {
+        executePurchaseItem(itemId);
     }
 
-    function purchaseMultipleItems(uint[] calldata itemIds) external payable {
-        processMultipleItemPurchase(itemIds);
+    function buyMultipleItems(uint[] calldata itemIds) external payable {
+        executePurchaseItemsBulk(itemIds);
     }
 
-    function delistItem(uint itemId) external onlySellerOfItem(itemId) {
-        updateItemListingStatus(itemId, false);
-        emit ItemDelistedEvent(itemId);
+    function removeItemFromSale(uint itemId) external isSeller(itemId) {
+        updateListingStatus(itemId, false);
+        emit ItemRemoved(itemId);
     }
 
-    function updateItemPrice(uint itemId, uint newPriceInWei) external onlySellerOfItem(itemId) {
-        require(newPriceInWei > 0, "DecentralizedMarketplace: Price must be greater than zero");
-        Item storage item = itemsForSale[itemId];
-        require(item.isCurrentlyListed == false, "DecentralizedMarketplace: Item is listed; cannot update price");
-        item.priceInWei = newPriceInWei;
-        emit ItemPriceUpdatedEvent(itemId, newPriceInWei);
+    function setNewItemPrice(uint itemId, uint newPriceWei) external isSeller(itemId) {
+        require(newPriceWei > 0, "Item price must be greater than zero");
+        Item storage item = itemsListed[itemId];
+        require(!item.listedForSale, "Item currently listed, cannot change price");
+        item.priceWei = newPriceWei;
+        emit ItemPriceChanged(itemId, newPriceWei);
     }
 
-    // Helper functions
-    function addItemToList(uint priceInWei) private returns (uint) {
-        require(priceInWei > 0, "DecentralizedMarketplace: Price must be greater than zero");
-        itemCount++;
-        itemsForSale[itemCount] = Item(itemCount, payable(msg.sender), address(0), priceInWei, true);
-        emit ItemListedEvent(itemCount, msg.sender, priceInWei);
-        return itemCount;
+    function listItem(uint priceWei) private returns (uint) {
+        require(priceWei > 0, "Item price must be greater than zero");
+        totalItems++;
+        itemsListed[totalItems] = Item(totalItems, payable(msg.sender), address(0), priceWei, true);
+        emit ItemListed(totalItems, msg.sender, priceWei);
+        return totalItems;
     }
 
-    function addMultipleItemsToList(uint[] memory pricesInWei) private returns (uint[] memory) {
-        require(pricesInWei.length > 0, "DecentralizedMarketplace: No prices provided");
-        uint[] memory ids = new uint[](pricesInWei.length);
-        for (uint i = 0; i < pricesInWei.length; i++) {
-            ids[i] = addItemToList(pricesInWei[i]);
+    function listItemsBulk(uint[] memory pricesWei) private returns (uint[] memory) {
+        require(pricesWei.length > 0, "No item prices provided");
+        uint[] memory ids = new uint[](pricesWei.length);
+        for (uint i = 0; i < pricesWei.length; i++) {
+            ids[i] = listItem(pricesWei[i]);
         }
-        emit MultipleItemsListedEvent(ids);
+        emit ItemsListedBulk(ids);
         return ids;
     }
 
-    function processSingleItemPurchase(uint itemId) private {
-        Item storage item = itemsForSale[itemId];
-        validateItemPurchase(item);
-        item.sellerAddress.transfer(msg.value);
-        finalizePurchase(item, itemId);
+    function executePurchaseItem(uint itemId) private {
+        Item storage item = itemsListed[itemId];
+        validatePurchase(item);
+        item.seller.transfer(msg.value);
+        finalizeItemSale(item, itemId);
     }
 
-    function processMultipleItemPurchase(uint[] memory itemIds) private {
-        uint totalCostInWei = 0;
+    function executePurchaseItemsBulk(uint[] memory itemIds) private {
+        uint totalPriceWei = 0;
         for (uint i = 0; i < itemIds.length; i++) {
-            Item storage item = itemsForSale[itemIds[i]];
-            validateItemPurchase(item);
-            totalCostInWei += item.priceInWei;
-            finalizePurchase(item, itemIds[i]);
+            Item storage item = itemsListed[itemIds[i]];
+            validatePurchase(item);
+            totalPriceWei += item.priceWei;
+            finalizeItemSale(item, itemIds[i]);
         }
-        returnChangeIfNecessary(totalCostInWei);
-        emit MultipleItemsPurchasedEvent(itemIds);
+        issueRefundIfNeeded(totalPriceWei);
+        emit ItemsSoldBulk(itemIds);
     }
 
-    function validateItemPurchase(Item storage item) private view {
-        require(item.isCurrentlyListed, "DecentralizedMarketplace: Item is not listed");
-        require(msg.sender != item.sellerAddress, "DecentralizedMarketplace: Seller cannot buy their own item");
-        require(msg.value >= item.priceInWei, "DecentralizedMarketplace: Incorrect value");
+    function validatePurchase(Item storage item) private view {
+        require(item.listedForSale, "Item not for sale");
+        require(msg.sender != item.seller, "Seller cannot buy their own item");
+        require(msg.value >= item.priceWei, "Sent value is below the item price");
     }
 
-    function finalizePurchase(Item storage item, uint itemId) private {
-        item.buyerAddress = msg.sender;
-        item.isCurrentlyListed = false;
-        emit ItemPurchasedEvent(itemId, msg.sender, item.priceInWei);
+    function finalizeItemSale(Item storage item, uint itemId) private {
+        item.buyer = msg.sender;
+        item.listedForSale = false;
+        emit ItemSold(itemId, msg.sender, item.priceWei);
     }
 
-    function returnChangeIfNecessary(uint totalCostInWei) private {
-        if (msg.value > totalCostInWei) {
-            payable(msg.sender).transfer(msg.value - totalCostInWei);
+    function issueRefundIfNeeded(uint totalPriceWei) private {
+        if (msg.value > totalPriceWei) {
+            payable(msg.sender).transfer(msg.value - totalPriceWei);
         }
     }
 
-    function updateItemListingStatus(uint itemId, bool isListed) private {
-        Item storage item = itemsForSale[itemId];
-        require(item.isCurrentlyListed != isListed, "DecentralizedMarketplace: Incorrect listing status");
-        item.isCurrentlyListed = isListed;
+    function updateListingStatus(uint itemId, bool newListedStatus) private {
+        Item storage item = itemsListed[itemId];
+        require(item.listedForSale != newListedStatus, "No change in listing status");
+        item.listedForSale = newListedStatus;
     }
 }
