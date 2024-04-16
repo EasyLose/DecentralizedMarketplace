@@ -58,9 +58,8 @@ contract DecentralizedMarketplace {
 
     function setNewItemPrice(uint itemId, uint newPriceWei) external isSeller(itemId) {
         require(newPriceWei > 0, "Error: New price must be greater than zero");
-        Item storage item = itemsListed[itemId];
-        require(!item.listedForSale, "Error: Cannot alter price while item is listed for sale");
-        item.priceWei = newPriceWei;
+        itemsListed[itemId].priceWei = newPriceWei;
+        require(!itemsListed[itemId].listedForSale, "Error: Cannot alter price while item is listed for sale");
         emit ItemPriceChanged(itemId, newPriceWei);
     }
 
@@ -92,10 +91,10 @@ contract DecentralizedMarketplace {
     function executePurchaseItemsBulk(uint[] memory itemIds) private {
         uint totalPriceWei = 0;
         for (uint i = 0; i < itemIds.length; i++) {
-            Item storage item = itemsListed[itemIds[i]];
-            validatePurchase(item, msg.value / itemIds.length); // Assuming equal value distribution, which could be improved
-            totalPriceWei += item.priceWei;
-            finalizeItemSale(item, itemIds[i]);
+            uint eachValue = msg.value / itemIds.length;
+            validatePurchase(itemsListed[itemIds[i]], eachValue);
+            totalPriceWei += itemsListed[itemIds[i]].priceWei;
+            finalizeItemSale(itemsListed[itemIds[i]], itemIds[i]);
         }
         issueRefundIfNeeded(totalPriceWei);
         emit ItemsSoldBulk(itemIds);
@@ -120,8 +119,7 @@ contract DecentralizedMarketplace {
     }
 
     function updateListingStatus(uint itemId, bool newListedStatus) private {
-        Item storage item = itemsListed[itemId];
-        require(item.listedForSale != newListedStatus, "Error: No change in the item's listing status");
-        item.listedForSale = newListedStatus;
+        require(itemsListed[itemId].listedForSale != newListedStatus, "Error: No change in the item's listing status");
+        itemsListed[itemId].listedForSale = newListedStatus;
     }
 }
