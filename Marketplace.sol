@@ -1,122 +1,119 @@
-// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 contract DecentralizedMarketplace {
-    address payable private owner;
+    address payable private _owner;
 
     struct Item {
-        uint itemId;
+        uint id;
         address payable seller;
         address buyer;
         uint price;
-        bool listed;
+        bool isListed;
     }
 
-    uint public itemCount = 0;
-    mapping(uint => Item) public items;
+    uint public totalItems = 0;
+    mapping(uint => Item) public itemList;
 
     event ItemListed(uint itemId, address indexed seller, uint price);
-    event ItemsListed(uint[] itemIds);
-    event ItemBought(uint itemId, address indexed buyer, uint price);
-    event ItemsBought(uint[] itemIds);
-    event ItemUnlisted(uint itemId);
-    event ItemRelisted(uint itemId, uint newPrice);
+    event MultipleItemsListed(uint[] itemIds);
+    event ItemPurchased(uint itemId, address indexed buyer, uint price);
+    event MultipleItemsPurchased(uint[] itemIds);
+    event ItemDelisted(uint itemId);
+    event ItemPriceUpdated(uint itemId, uint newPrice);
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "Only the marketplace owner can perform this action");
+        require(msg.sender == _owner, "Only the marketplace owner can perform this action");
         _;
     }
 
-    modifier onlySeller(uint itemId) {
-        require(msg.sender == items[itemId].seller, "Only the item's seller can perform this action");
+    modifier onlyItemSeller(uint itemId) {
+        require(msg.sender == itemList[itemId].seller, "Only the item's seller can perform this action");
         _;
     }
 
     constructor() {
-        owner = payable(msg.sender);
+        _owner = payable(msg.sender);
     }
 
-    function listItem(uint _price) external returns (uint) {
-        itemCount++;
-        items[itemCount] = Item(itemCount, payable(msg.sender), address(0), _price, true);
+    function listItem(uint price) external returns (uint) {
+        totalItems++;
+        itemList[totalItems] = Item(totalItems, payable(msg.sender), address(0), price, true);
 
-        emit ItemListed(itemCount, msg.sender, _price);
+        emit ItemListed(totalItems, msg.sender, price);
 
-        return itemCount;
+        return totalItems;
     }
 
-    // Batch list items
-    function listItems(uint[] calldata _prices) external returns (uint[] memory) {
-        uint[] memory ids = new uint[](_prices.length);
+    function listMultipleItems(uint[] calldata prices) external returns (uint[] memory) {
+        uint[] memory ids = new uint[](prices.length);
 
-        for (uint i = 0; i < _prices.length; i++) {
-            itemCount++;
-            items[itemCount] = Item(itemCount, payable(msg.sender), address(0), _prices[i], true);
-            ids[i] = itemCount;
+        for (uint i = 0; i < prices.length; i++) {
+            totalItems++;
+            itemList[totalItems] = Item(totalItems, payable(msg.sender), address(0), prices[i], true);
+            ids[i] = totalItems;
 
-            emit ItemListed(itemCount, msg.sender, _prices[i]);
+            emit ItemListed(totalItems, msg.sender, prices[i]);
         }
 
-        emit ItemsListed(ids);
+        emit MultipleItemsListed(ids);
 
         return ids;
     }
 
-    function buyItem(uint itemId) external payable {
-        Item storage item = items[itemId];
+    function purchaseItem(uint itemId) external payable {
+        Item storage item = itemList[itemId];
 
-        require(item.listed, "Item is not listed.");
+        require(item.isListed, "Item is not listed.");
         require(msg.value == item.price, "Incorrect value.");
         require(item.seller != msg.sender, "Seller cannot buy their own item.");
 
         item.seller.transfer(msg.value);
         item.buyer = msg.sender;
-        item.listed = false;
+        item.isListed = false;
 
-        emit ItemBought(itemId, msg.sender, msg.value);
+        emit ItemPurchased(itemId, msg.sender, msg.value);
     }
 
-    // Batch buy items
-    function buyItems(uint[] calldata itemIds) external payable {
+    function purchaseMultipleItems(uint[] calldata itemIds) external payable {
         require(itemIds.length > 0, "No items provided");
-        uint totalPrice = 0;
+        uint totalCost = 0;
 
         for(uint i = 0; i < itemIds.length; i++) {
             uint itemId = itemIds[i];
-            Item storage item = items[itemId];
+            Item storage item = itemList[itemId];
 
-            require(item.listed, "Item is not listed.");
+            require(item.isListed, "Item is not listed.");
             require(item.seller != msg.sender, "Seller cannot buy their own item.");
 
-            totalPrice += item.price;
+            totalCost += item.price;
             item.buyer = msg.sender;
-            item.listed = false;
+            item.isListed = false;
 
-            emit ItemBought(itemId, msg.sender, item.price);
+            emit ItemPurchased(itemId, msg.sender, item.price);
         }
 
-        require(msg.value == totalPrice, "Incorrect total value.");
-        payable(msg.sender).transfer(msg.value - totalPrice);
+        require(msg.value == totalCost, "Incorrect total value.");
+        payable(msg.sender).transfer(msg.value - totalCost);
 
-        emit ItemsBought(itemIds);
+        emit MultipleItemsPurchased(itemIds);
     }
 
-    function unlistItem(uint itemId) external onlySeller(itemId) {
-        Item storage item = items[itemId];
-        require(item.listed, "Item is already unlisted.");
+    function delistItem(uint itemId) external onlyItemSeller(itemId) {
+        Item storage item = itemList[itemId];
+        require(item.isListed, "Item is already delisted.");
 
-        item.listed = false;
+        item.isListed = false;
 
-        emit ItemUnlisted(itemId);
+        emit ItemDelisted(itemId);
     }
 
-    function relistItem(uint itemId, uint newPrice) external onlySeller(itemId) {
-        Item storage item = items[itemId];
-        require(!item.listed, "Item is already listed.");
+    function updateItemPrice(uint itemId, uint newPrice) external onlyItemSeller(itemId) {
+        Item storage item = itemList[itemId];
+        require(!item.isListed, "Item is already listed.");
 
         item.price = newPrice;
-        item.listed = true;
+        item.isListed = true;
 
-        emit ItemRelisted(itemId, newPrice);
+        emit ItemPriceUpdated(itemId, newPrice);
     }
 }
