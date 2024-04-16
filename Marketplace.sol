@@ -84,7 +84,7 @@ contract DecentralizedMarketplace {
 
     function executePurchaseItem(uint itemId) private {
         Item storage item = itemsListed[itemId];
-        validatePurchase(item);
+        validatePurchase(item, msg.value);
         item.seller.transfer(msg.value);
         finalizeItemSale(item, itemId);
     }
@@ -93,7 +93,7 @@ contract DecentralizedMarketplace {
         uint totalPriceWei = 0;
         for (uint i = 0; i < itemIds.length; i++) {
             Item storage item = itemsListed[itemIds[i]];
-            validatePurchase(item);
+            validatePurchase(item, msg.value / itemIds.length); // Assuming equal distribution of msg.value
             totalPriceWei += item.priceWei;
             finalizeItemSale(item, itemIds[i]);
         }
@@ -101,10 +101,10 @@ contract DecentralizedMarketplace {
         emit ItemsSoldBulk(itemIds);
     }
 
-    function validatePurchase(Item storage item) private view {
+    function validatePurchase(Item storage item, uint sentValue) private view {
         require(item.listedForSale, "Item not for sale");
         require(msg.sender != item.seller, "Seller cannot buy their own item");
-        require(msg.value >= item.priceWei, "Sent value is below the item price");
+        require(sentValue >= item.priceWei, "Sent value is below the item price");
     }
 
     function finalizeItemSale(Item storage item, uint itemId) private {
